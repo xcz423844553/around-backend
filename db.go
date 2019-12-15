@@ -2,11 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"strconv"
 
 	"github.com/olivere/elastic"
 )
