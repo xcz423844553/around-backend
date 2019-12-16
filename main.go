@@ -5,15 +5,32 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/olivere/elastic"
+	"github.com/pborman/uuid"
 )
 
 const (
-	POST_INDEX = "post"
-	DISTANCE   = "200km"
-	ES_URL     = "http://35.239.60.232:9200"
+	POST_INDEX  = "post"
+	DISTANCE    = "200km"
+	ES_URL      = "http://35.239.60.232:9200"
+	BUCKET_NAME = "bucket-around"
+)
+
+var (
+	mediaTypes = map[string]string{
+		".jpeg": "image",
+		".jpg":  "image",
+		".gif":  "image",
+		".png":  "image",
+		".mov":  "video",
+		".mp4":  "video",
+		".avi":  "video",
+		".flv":  "video",
+		".wmv":  "video",
+	}
 )
 
 type Location struct {
@@ -22,10 +39,12 @@ type Location struct {
 }
 
 type Post struct {
-	// `json:"user"` is for the json parsing of this User field. Otherwise, by default it's 'User'.
 	User     string   `json:"user"`
 	Message  string   `json:"message"`
 	Location Location `json:"location"`
+	Url      string   `json:"url"`
+	Type     string   `json:"type"`
+	Face     float32  `json:"face"`
 }
 
 func main() {
@@ -40,13 +59,49 @@ func main() {
 func handlerPost(w http.ResponseWriter, r *http.Request) {
 	// Parse from body of request to get a json object.
 	fmt.Println("Received one post request")
-	decoder := json.NewDecoder(r.Body)
-	var p Post
-	if err := decoder.Decode(&p); err != nil {
-		panic(err)
+	w.Header().Set("Content-Type", "application/json")
 
+	lat, _ := strconv.ParseFloat(r.FormValue("lat"), 64)
+	lon, _ := strconv.ParseFloat(r.FormValue("lon"), 64)
+
+	p := &Post{
+		User:    r.FormValue("user"),
+		Message: r.FormValue("message"),
+		Location: Location{
+			Lat: lat,
+			Lon: lon,
+		},
+		Face: 0.0,
 	}
-	fmt.Fprintf(w, "Post received: %s\n", p.Message)
+
+	id := uuid.New()
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "Image is not available", http.StatusBadRequest)
+		fmt.Printf("Image is not available %v\n", err)
+		return
+	}
+	attrs, err := saveToGCS(file, id)
+	if err != nil {
+		http.Error(w, "Failed to save image to GCS", http.StatusInternalServerError)
+		fmt.Printf("Failed to save image to GCS %v\n", err)
+		return
+	}
+	p.Url = attrs.MediaLink
+
+	suffix := filepath.Ext(header.Filename)
+	if t, ok := mediaTypes[suffix]; ok {
+		p.Type = t
+	} else {
+		p.Type = "unknown"
+	}
+
+	err = saveToES(p, POST_INDEX, id)
+	if err != nil {
+		http.Error(w, "Failed to save post to Elasticsearch", http.StatusInternalServerError)
+		fmt.Printf("Failed to save post to Elasticsearch %v\n", err)
+		return
+	}
 }
 
 func handlerSearch(w http.ResponseWriter, r *http.Request) {
