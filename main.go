@@ -105,6 +105,7 @@ func handlerPost(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			p.Face = score
+			fmt.Printf("Face score = %v\n", score)
 		}
 	}
 
