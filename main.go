@@ -53,6 +53,7 @@ func main() {
 
 	http.HandleFunc("/post", handlerPost)
 	http.HandleFunc("/search", handlerSearch)
+	http.HandleFunc("/cluster", handlerCluster)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -96,6 +97,17 @@ func handlerPost(w http.ResponseWriter, r *http.Request) {
 		p.Type = "unknown"
 	}
 
+	if p.Type == "image" {
+		uri := fmt.Sprintf("gs://%s/%s", BUCKET_NAME, id)
+		if score, err := annotate(uri); err != nil {
+			http.Error(w, "Failed to annotate the image", http.StatusInternalServerError)
+			fmt.Printf("Failed to annotate the image %v\n", err)
+			return
+		} else {
+			p.Face = score
+		}
+	}
+
 	err = saveToES(p, POST_INDEX, id)
 	if err != nil {
 		http.Error(w, "Failed to save post to Elasticsearch", http.StatusInternalServerError)
@@ -132,6 +144,29 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to parse posts into JSON format", http.StatusInternalServerError)
 		fmt.Printf("Failed to parse posts into JSON format %v.\n", err)
+		return
+	}
+	w.Write(js)
+}
+
+func handlerCluster(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Received one cluster request")
+	w.Header().Set("Content-Type", "application/json")
+
+	term := r.URL.Query().Get("term")
+	query := elastic.NewRangeQuery(term).Gte(0.9)
+
+	searchResult, err := readFromES(query, POST_INDEX)
+	if err != nil {
+		http.Error(w, "Failed to read from Elasticsearch", http.StatusInternalServerError)
+		fmt.Printf("Failed to read from Elasticsearch %v\n", err)
+		return
+	}
+	posts := getPostFromSearchResult(searchResult)
+	js, err := json.Marshal(posts)
+	if err != nil {
+		http.Error(w, "Failed to parse posts into JSON format", http.StatusInternalServerError)
+		fmt.Printf("Failed to parse posts into JSON format %v\n", err)
 		return
 	}
 	w.Write(js)

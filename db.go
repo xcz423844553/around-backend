@@ -25,9 +25,12 @@ func createIndexIfNotExist() {
 		mapping := `{
 			"mappings": {
 				"properties": {
-					"location": {
-						"type": "geo_point"
-					}
+					"user": { "type": "keyword", "index": false },
+					"message": { "type": "keyword", "index": false },
+					"location": { "type": "geo_point" },
+					"url": { "type": "keyword", "index": false },
+					"type": { "type": "keyword", "index": false },
+					"face": { "type": "float" }
 				}
 			}
 		}`
