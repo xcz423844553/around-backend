@@ -23,18 +23,40 @@ func createIndexIfNotExist() {
 
 	if !exists {
 		mapping := `{
-			"mappings": {
-				"properties": {
-					"user": { "type": "keyword", "index": false },
-					"message": { "type": "keyword", "index": false },
-					"location": { "type": "geo_point" },
-					"url": { "type": "keyword", "index": false },
-					"type": { "type": "keyword", "index": false },
-					"face": { "type": "float" }
-				}
-			}
-		}`
+	"mappings": {
+	"properties": {
+	"user": { "type": "keyword", "index": false },
+	"message": { "type": "keyword", "index": false },
+	"location": { "type": "geo_point" },
+	"url": { "type": "keyword", "index": false },
+	"type": { "type": "keyword", "index": false },
+	"face": { "type": "float" }
+	}
+	}
+	}`
 		_, err := client.CreateIndex(POST_INDEX).Body(mapping).Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	exists, err = client.IndexExists(USER_INDEX).Do(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	if !exists {
+		mapping := `{
+	"mappings": {
+	"properties": {
+	"username": {"type": "keyword"},
+	"password": {"type": "keyword", "index": false},
+	"age": {"type": "long", "index": false},
+	"gender": {"type": "keyword", "index": false}
+	}
+	}
+	}`
+		_, err = client.CreateIndex(USER_INDEX).Body(mapping).Do(context.Background())
 		if err != nil {
 			panic(err)
 		}
@@ -107,7 +129,7 @@ func saveToGCS(r io.Reader, objectName string) (*storage.ObjectAttrs, error) {
 	return attrs, nil
 }
 
-func saveToES(post *Post, index string, id string) error {
+func saveToES(i interface{}, index string, id string) error {
 	client, err := elastic.NewClient(elastic.SetURL(ES_URL), elastic.SetSniff(false))
 	if err != nil {
 		return err
@@ -116,13 +138,12 @@ func saveToES(post *Post, index string, id string) error {
 	_, err = client.Index().
 		Index(index).
 		Id(id).
-		BodyJson(post).
+		BodyJson(i).
 		Do(context.Background())
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Post is saved to Index %s\n", post.Message)
 	return nil
 }
